@@ -4,6 +4,7 @@ from extract_files import extract_files
 from random import choice
 import random
 import numpy as np
+import matplotlib.pyplot as plt
 
 class lobseq():
     def __init__(self, directory):
@@ -60,8 +61,8 @@ class lobseq():
             print(f"No images for the number {label} is available. \
                     Please try with a different number.")
             exit()
-
-    def __calculate_bounds(self, digit, offset):
+    
+    def __determine_bounds(self, digit, offset):
         left_bound = 0
         right_bound = 27
 
@@ -78,53 +79,100 @@ class lobseq():
                 break
 
         return (left_bound, right_bound)
-    
-    def __determine_bounds(self, images, offset):
-        bounds = []
 
-        for img in images:
-            bounds.append(self.__calculate_bounds(img, offset))
-
-        return bounds
-    
     """
     Can call this function for fun
     """
-    def uniform_image_sequence(self, sequence, set):
-        available_sets = ['train', 'test']
-
-        if set not in available_sets:
-            raise ValueError(f"Invalid set option '{set}'. Please choose from: {', '.join(available_sets)}.")
+    def __uniform_image_sequence(self, sequence, offset, data_set):
 
         images = []
-        if set == 'train':
+        bounds = []
+
+        if data_set == 'train':
             for digit in sequence:
                 img = self.X_train_raw[self.__select_random_train_label(digit)]
+                bounds.append(self.__determine_bounds(img, offset))
                 images.append(img)
         else:
             for digit in sequence:
                 img = self.X_test_raw[self.__select_random_test_label(digit)]
+                bounds.append(self.__determine_bounds(img, offset))
                 images.append(img)
         
-        return images
+        return (images, bounds)
     
-    def non_uniform_sequence(self, sequence, offset, canvas_inc):
-        train_images = self.uniform_image_sequence(sequence, 'train')
-        test_images = self.uniform_image_sequence(sequence, 'test')
+    def non_uniform_sequence(self, sequence, offset, canvas_inc, data_set):
+        images = []
+        bounds = []
 
-        train_img_bounds = self.__determine_bounds(train_images, offset)
-        test_img_bounds = self.__determine_bounds(train_images, offset)
+        if data_set == 'train':
+            images, bounds = self.__uniform_image_sequence(sequence, offset, 'train')
+        elif data_set == 'test':
+            images, bounds = self.__uniform_image_sequence(sequence, offset, 'test')
+        else:
+            raise ValueError("Wrong data set selected for sequence: expected data_set='train' or 'test'")
 
         h , w = 28, 28
         canvas_h = h + canvas_inc
         canvas_w = w + canvas_inc
 
-        noisy_train_images = []
-        noisy_test_images = []
+        noisy_images = []
 
-        for digit, (l_bound, r_bound) in zip(sequence, train_img_bounds):
-            pass
+        for digit, (l_bound, r_bound) in zip(images, bounds):
+            # Create an empty canvas for the image
+            canvas = np.ones((canvas_h, canvas_w), dtype=np.float32)
 
-        for digit, (l_bound, r_bound) in zip(sequence, test_img_bounds):
+            # Generate a Random vertical position
+            y_pos = random.randint(0, 10)
+            # Generate a Random horizontal position 
+            x_pos = random.randint(-l_bound, canvas_w-r_bound)
+
+            # Calculate the start and end of y
+            y_start = y_pos
+            y_end = y_start + h
+
+            # x_pos could be positive or negative depending on if the image is being skewed left of right
+            if x_pos < 0: # if skewed left
+                # grab digit splice with the left part cut off
+                digit = np.array(digit[:, -x_pos:])
+                # paste splice on to canvas
+                canvas[y_start:y_end, 0:digit.shape[1]] = digit
+            elif w+x_pos > canvas_w: # if skewed right
+                # grab digit splice with the right part cut off
+                alpha = w + x_pos - canvas_w
+                digit = digit[:, :w-alpha]
+                # paste splice on to canvas
+                canvas[y_start:y_end, x_pos:canvas_w] = digit
+            else:
+                # if no skew
+                canvas[y_start:y_end, x_pos:x_pos+w] = digit
+
+            # append canvas to array
+            noisy_images.append(canvas)
+        
+        # stack the individual canvas together into a single image
+        noisy_images = np.hstack(noisy_images)
+
+        return noisy_images
+    
+    def generate_random_database(self, dataset_size, sequence_size, offset, canvas_inc, data_set='train'):
+        if data_set == 'train' or data_set == 'test':
             pass
-            
+        else:
+            raise ValueError("Wrong data set selected for sequence: expected data_set='train' or 'test'")
+        
+        dataset = []
+        labels = []
+
+        for i in range(dataset_size):
+            sequence = np.random.randint(0,10, size=sequence_size)
+            sequence_array = self.non_uniform_sequence(sequence, offset, canvas_inc, data_set)
+            dataset.append(sequence_array)
+            labels.append(sequence)
+
+        return np.array(dataset), np.array(labels)
+
+    def show_image(self, image):
+        plt.imshow(image, cmap='gray')
+        plt.axis('off')
+        plt.show()
